@@ -1,22 +1,12 @@
 import './style.css';
 
-const COLUMNS = 10;
-const ROWS = 20;
+import {
+  COLUMNS, ROWS, SHAPES, clearLines, collides, createBoard, createPiece, dropInterval,
+  levelForLines, lineClearScore, mergePiece, rotate, shuffledBag,
+  type Matrix, type Piece, type PieceType,
+} from './game';
+
 const CELL = 30;
-
-type PieceType = 'I' | 'O' | 'T' | 'S' | 'Z' | 'J' | 'L';
-type Matrix = number[][];
-type Piece = { type: PieceType; matrix: Matrix; x: number; y: number };
-
-const SHAPES: Record<PieceType, Matrix> = {
-  I: [[1, 1, 1, 1]],
-  O: [[1, 1], [1, 1]],
-  T: [[0, 1, 0], [1, 1, 1]],
-  S: [[0, 1, 1], [1, 1, 0]],
-  Z: [[1, 1, 0], [0, 1, 1]],
-  J: [[1, 0, 0], [1, 1, 1]],
-  L: [[0, 0, 1], [1, 1, 1]],
-};
 
 const COLORS: Record<PieceType, [string, string]> = {
   I: ['#39d8ef', '#1199c4'], O: ['#ffd166', '#e89a35'], T: ['#b78aff', '#8053d6'],
@@ -61,36 +51,13 @@ let gameOver = false;
 let lastDrop = 0;
 let animationFrame = 0;
 
-function createBoard(): (PieceType | null)[][] {
-  return Array.from({ length: ROWS }, () => Array<PieceType | null>(COLUMNS).fill(null));
-}
-
-function refillBag(): void {
-  const types = Object.keys(SHAPES) as PieceType[];
-  for (let i = types.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [types[i], types[j]] = [types[j], types[i]];
-  }
-  bag.push(...types);
-}
-
 function drawFromBag(): PieceType {
-  if (bag.length === 0) refillBag();
+  if (bag.length === 0) bag.push(...shuffledBag());
   return bag.pop()!;
 }
 
-function createPiece(type: PieceType): Piece {
-  const matrix = SHAPES[type].map((row) => [...row]);
-  return { type, matrix, x: Math.floor((COLUMNS - matrix[0].length) / 2), y: 0 };
-}
-
-function collision(piece: Piece, dx = 0, dy = 0, matrix = piece.matrix): boolean {
-  return matrix.some((row, rowIndex) => row.some((value, columnIndex) => {
-    if (!value) return false;
-    const x = piece.x + columnIndex + dx;
-    const y = piece.y + rowIndex + dy;
-    return x < 0 || x >= COLUMNS || y >= ROWS || (y >= 0 && board[y][x] !== null);
-  }));
+function collision(piece: Piece, dx = 0, dy = 0, matrix: Matrix = piece.matrix): boolean {
+  return collides(board, piece, dx, dy, matrix);
 }
 
 function fillUpcoming(): void {
@@ -104,10 +71,6 @@ function spawnNext(): void {
   canHold = true;
   holdStatus.textContent = 'SAVE FOR LATER';
   if (collision(active)) finishGame();
-}
-
-function rotate(matrix: Matrix): Matrix {
-  return matrix[0].map((_, column) => matrix.map((row) => row[column]).reverse());
 }
 
 function rotateActive(): void {
@@ -157,30 +120,13 @@ function hardDrop(): void {
 }
 
 function lockPiece(): void {
-  for (let y = 0; y < active.matrix.length; y++) {
-    for (let x = 0; x < active.matrix[y].length; x++) {
-      if (!active.matrix[y][x]) continue;
-      const boardY = active.y + y;
-      const boardX = active.x + x;
-      if (boardY >= 0) board[boardY][boardX] = active.type;
-    }
-  }
-
-  let cleared = 0;
-  board = board.filter((row) => {
-    if (row.every((cell) => cell !== null)) {
-      cleared += 1;
-      return false;
-    }
-    return true;
-  });
-  while (board.length < ROWS) board.unshift(Array<PieceType | null>(COLUMNS).fill(null));
-
-  const rewards = [0, 100, 300, 500, 800];
-  if (cleared > 0) {
-    score += (rewards[cleared] ?? 800) * level;
-    lines += cleared;
-    level = Math.floor(lines / 10) + 1;
+  mergePiece(board, active);
+  const result = clearLines(board);
+  board = result.board;
+  if (result.cleared > 0) {
+    score += lineClearScore(result.cleared, level);
+    lines += result.cleared;
+    level = levelForLines(lines);
   }
   updateStats();
   spawnNext();
@@ -321,7 +267,7 @@ function drawPreview(ctx: CanvasRenderingContext2D, types: (PieceType | null)[],
 
 function render(time: number): void {
   if (!paused && !gameOver) {
-    const interval = Math.max(90, 800 - (level - 1) * 65);
+    const interval = dropInterval(level);
     if (time - lastDrop >= interval) {
       if (!move(0, 1)) lockPiece();
       lastDrop = time;
