@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,6 +26,16 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Run unit tests
+        run: npm run test:ci
+
+      - name: Upload test results
+        if: always() # also upload when tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/junit.xml
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
